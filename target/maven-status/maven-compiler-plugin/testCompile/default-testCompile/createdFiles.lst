@@ -1,0 +1,4 @@
+com\robotech\services\RegistroResultadosTest.class
+com\robotech\RobotechBackendApplicationTests.class
+com\robotech\services\AuthServiceTest.class
+com\robotech\services\TorneoServiceTest.class

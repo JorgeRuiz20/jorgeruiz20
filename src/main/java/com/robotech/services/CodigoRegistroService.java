@@ -26,7 +26,7 @@ public class CodigoRegistroService {
         User generador = userRepository.findById(generadorId)
                 .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
 
-        // Verificar si es ADMIN o CLUB_OWNER
+        
         boolean isAdmin = generador.getRoles().stream()
                 .anyMatch(role -> "ROLE_ADMIN".equals(role.getNombre()));
         
@@ -40,7 +40,7 @@ public class CodigoRegistroService {
         Club club;
         
         if (isClubOwner) {
-            // Club owner: buscar su club
+            
             club = clubRepository.findByOwnerId(generadorId)
                     .orElseThrow(() -> new RuntimeException("No tienes un club asignado"));
             

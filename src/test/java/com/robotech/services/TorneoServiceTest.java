@@ -3,6 +3,7 @@ package com.robotech.services;
 import com.robotech.dto.CreateTorneoRequest;
 import com.robotech.models.*;
 import com.robotech.repositories.*;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -18,10 +19,10 @@ import static org.mockito.Mockito.*;
 
 /**
  * ===============================================================
- * PRUEBA 2: CREACIÓN DE TORNEO - TorneoServiceTest
+ * PRUEBA 2: CREACIÓN DE TORNEO - TorneoServiceTest (CORREGIDO)
  * ===============================================================
  * 
- * Prueba la creación de torneos con todas sus validaciones.
+ * Test corregido con lenient() para evitar UnnecessaryStubbingException
  */
 @ExtendWith(MockitoExtension.class)
 public class TorneoServiceTest {
@@ -38,14 +39,39 @@ public class TorneoServiceTest {
     @Mock
     private UserRepository userRepository;
     
+    @Mock
+    private ParticipanteRepository participanteRepository;
+    
+    @Mock
+    private RobotRepository robotRepository;
+    
+    @Mock
+    private EnfrentamientoRepository enfrentamientoRepository;
+    
+    @Mock
+    private HistorialTorneoRepository historialTorneoRepository;
+    
+    @Mock
+    private SimilarityService similarityService;
+    
+    @Mock
+    private RankingService rankingService;
+    
     @InjectMocks
     private TorneoService torneoService;
+    
+    @BeforeEach
+    void setUp() {
+        // ✅ Usar lenient() para permitir stubs no utilizados en todos los tests
+        lenient().when(similarityService.existeTorneoSimilar(anyString(), anyList()))
+            .thenReturn(false);
+    }
     
     @Test
     public void testCrearTorneo_DebeFuncionarConDatosCompletos() {
         // =============== ARRANGE ===============
         
-        // 1. Preparar request (basado en tu CreateTorneoRequest.java real)
+        // 1. Preparar request
         CreateTorneoRequest request = new CreateTorneoRequest();
         request.setNombre("Torneo Nacional 2024");
         request.setDescripcion("Campeonato nacional de robótica");
@@ -91,7 +117,10 @@ public class TorneoServiceTest {
         
         when(userRepository.findById(2L)).thenReturn(Optional.of(juez));
         
-        // 5. Mock del torneo guardado
+        // 5. Mock para verificación de nombres similares
+        when(torneoRepository.findAll()).thenReturn(new ArrayList<>());
+        
+        // 6. Mock del torneo guardado
         Torneo torneoGuardado = new Torneo();
         torneoGuardado.setId(1L);
         torneoGuardado.setNombre("Torneo Nacional 2024");
@@ -144,6 +173,9 @@ public class TorneoServiceTest {
         verify(categoriaRepository, times(1)).findById(1L);
         verify(sedeRepository, times(1)).findById(1L);
         verify(userRepository, times(1)).findById(2L);
+        
+        // 6. Verificar que se validó la similitud de nombres
+        verify(torneoRepository, times(1)).findAll();
     }
     
     @Test
@@ -164,6 +196,31 @@ public class TorneoServiceTest {
         );
         
         assertTrue(exception.getMessage().contains("Categoría no encontrada"));
+        verify(torneoRepository, never()).save(any(Torneo.class));
+    }
+    
+    @Test
+    public void testCrearTorneo_DebeRechazarCategoriaInactiva() {
+        // ARRANGE
+        CreateTorneoRequest request = new CreateTorneoRequest();
+        request.setNombre("Torneo Prueba");
+        request.setCategoriaId(1L);
+        request.setSedeId(1L);
+        request.setJuezResponsableId(2L);
+        
+        Categoria categoria = new Categoria();
+        categoria.setId(1L);
+        categoria.setActiva(false); // ❌ Categoría inactiva
+        
+        when(categoriaRepository.findById(1L)).thenReturn(Optional.of(categoria));
+        
+        // ACT & ASSERT
+        RuntimeException exception = assertThrows(
+            RuntimeException.class,
+            () -> torneoService.createTorneo(request)
+        );
+        
+        assertTrue(exception.getMessage().contains("no está activa"));
         verify(torneoRepository, never()).save(any(Torneo.class));
     }
     
@@ -194,7 +251,37 @@ public class TorneoServiceTest {
     }
     
     @Test
-    public void testCrearTorneo_DebeRechazarJuezInvalido() {
+    public void testCrearTorneo_DebeRechazarSedeInactiva() {
+        // ARRANGE
+        CreateTorneoRequest request = new CreateTorneoRequest();
+        request.setNombre("Torneo Prueba");
+        request.setCategoriaId(1L);
+        request.setSedeId(1L);
+        request.setJuezResponsableId(2L);
+        
+        Categoria categoria = new Categoria();
+        categoria.setId(1L);
+        categoria.setActiva(true);
+        
+        Sede sede = new Sede();
+        sede.setId(1L);
+        sede.setActiva(false); // ❌ Sede inactiva
+        
+        when(categoriaRepository.findById(1L)).thenReturn(Optional.of(categoria));
+        when(sedeRepository.findById(1L)).thenReturn(Optional.of(sede));
+        
+        // ACT & ASSERT
+        RuntimeException exception = assertThrows(
+            RuntimeException.class,
+            () -> torneoService.createTorneo(request)
+        );
+        
+        assertTrue(exception.getMessage().contains("no está activa"));
+        verify(torneoRepository, never()).save(any(Torneo.class));
+    }
+    
+    @Test
+    public void testCrearTorneo_DebeRechazarJuezInexistente() {
         // ARRANGE
         CreateTorneoRequest request = new CreateTorneoRequest();
         request.setNombre("Torneo Prueba");
@@ -221,6 +308,213 @@ public class TorneoServiceTest {
         );
         
         assertTrue(exception.getMessage().contains("Juez no encontrado"));
+        verify(torneoRepository, never()).save(any(Torneo.class));
+    }
+    
+    @Test
+    public void testCrearTorneo_DebeRechazarUsuarioSinRolJuez() {
+        // ARRANGE
+        CreateTorneoRequest request = new CreateTorneoRequest();
+        request.setNombre("Torneo Prueba");
+        request.setCategoriaId(1L);
+        request.setSedeId(1L);
+        request.setJuezResponsableId(2L);
+        
+        Categoria categoria = new Categoria();
+        categoria.setId(1L);
+        categoria.setActiva(true);
+        
+        Sede sede = new Sede();
+        sede.setId(1L);
+        sede.setActiva(true);
+        
+        // Usuario sin rol de JUEZ
+        User usuario = new User();
+        usuario.setId(2L);
+        usuario.setNombre("Juan");
+        usuario.setApellido("Pérez");
+        
+        Role roleUser = new Role();
+        roleUser.setNombre("ROLE_USER"); // ❌ No es ROLE_JUDGE
+        usuario.setRoles(Set.of(roleUser));
+        
+        when(categoriaRepository.findById(1L)).thenReturn(Optional.of(categoria));
+        when(sedeRepository.findById(1L)).thenReturn(Optional.of(sede));
+        when(userRepository.findById(2L)).thenReturn(Optional.of(usuario));
+        
+        // ACT & ASSERT
+        RuntimeException exception = assertThrows(
+            RuntimeException.class,
+            () -> torneoService.createTorneo(request)
+        );
+        
+        assertTrue(exception.getMessage().contains("no tiene el rol de JUEZ"));
+        verify(torneoRepository, never()).save(any(Torneo.class));
+    }
+    
+    @Test
+    public void testCrearTorneo_DebeRechazarNombreVacio() {
+        // ARRANGE
+        CreateTorneoRequest request = new CreateTorneoRequest();
+        request.setNombre("   "); // ❌ Nombre vacío/blank
+        request.setCategoriaId(1L);
+        request.setSedeId(1L);
+        request.setJuezResponsableId(2L);
+        
+        Categoria categoria = new Categoria();
+        categoria.setId(1L);
+        categoria.setActiva(true);
+        
+        Sede sede = new Sede();
+        sede.setId(1L);
+        sede.setActiva(true);
+        
+        User juez = new User();
+        juez.setId(2L);
+        Role roleJudge = new Role();
+        roleJudge.setNombre("ROLE_JUDGE");
+        juez.setRoles(Set.of(roleJudge));
+        
+        when(categoriaRepository.findById(1L)).thenReturn(Optional.of(categoria));
+        when(sedeRepository.findById(1L)).thenReturn(Optional.of(sede));
+        when(userRepository.findById(2L)).thenReturn(Optional.of(juez));
+        
+        // ACT & ASSERT
+        RuntimeException exception = assertThrows(
+            RuntimeException.class,
+            () -> torneoService.createTorneo(request)
+        );
+        
+        assertTrue(exception.getMessage().contains("no puede estar vacío"));
+        verify(torneoRepository, never()).save(any(Torneo.class));
+    }
+    
+    @Test
+    public void testCrearTorneo_DebeRechazarNombreSimilar() {
+        // ARRANGE
+        CreateTorneoRequest request = new CreateTorneoRequest();
+        request.setNombre("Torneo Nacional 2024");
+        request.setCategoriaId(1L);
+        request.setSedeId(1L);
+        request.setJuezResponsableId(2L);
+        
+        Categoria categoria = new Categoria();
+        categoria.setId(1L);
+        categoria.setActiva(true);
+        
+        Sede sede = new Sede();
+        sede.setId(1L);
+        sede.setActiva(true);
+        
+        User juez = new User();
+        juez.setId(2L);
+        Role roleJudge = new Role();
+        roleJudge.setNombre("ROLE_JUDGE");
+        juez.setRoles(Set.of(roleJudge));
+        
+        // Mock de torneo existente con nombre similar
+        Torneo torneoExistente = new Torneo();
+        torneoExistente.setNombre("Torneo Nacional 2023");
+        
+        when(categoriaRepository.findById(1L)).thenReturn(Optional.of(categoria));
+        when(sedeRepository.findById(1L)).thenReturn(Optional.of(sede));
+        when(userRepository.findById(2L)).thenReturn(Optional.of(juez));
+        when(torneoRepository.findAll()).thenReturn(List.of(torneoExistente));
+        
+        // ✅ Sobrescribir el comportamiento lenient para este test específico
+        when(similarityService.existeTorneoSimilar(eq("Torneo Nacional 2024"), anyList()))
+            .thenReturn(true);
+        when(similarityService.encontrarTorneoSimilar(eq("Torneo Nacional 2024"), anyList()))
+            .thenReturn("Torneo Nacional 2023");
+        
+        // ACT & ASSERT
+        RuntimeException exception = assertThrows(
+            RuntimeException.class,
+            () -> torneoService.createTorneo(request)
+        );
+        
+        assertTrue(exception.getMessage().contains("nombre similar"));
+        assertTrue(exception.getMessage().contains("Torneo Nacional 2023"));
+        verify(torneoRepository, never()).save(any(Torneo.class));
+    }
+    
+    @Test
+    public void testCrearTorneo_DebeRechazarActivacionAutomaticaSinFecha() {
+        // ARRANGE
+        CreateTorneoRequest request = new CreateTorneoRequest();
+        request.setNombre("Torneo Prueba");
+        request.setCategoriaId(1L);
+        request.setSedeId(1L);
+        request.setJuezResponsableId(2L);
+        request.setActivacionAutomatica(true);
+        request.setFechaActivacionProgramada(null); // ❌ Sin fecha
+        
+        Categoria categoria = new Categoria();
+        categoria.setId(1L);
+        categoria.setActiva(true);
+        
+        Sede sede = new Sede();
+        sede.setId(1L);
+        sede.setActiva(true);
+        
+        User juez = new User();
+        juez.setId(2L);
+        Role roleJudge = new Role();
+        roleJudge.setNombre("ROLE_JUDGE");
+        juez.setRoles(Set.of(roleJudge));
+        
+        when(categoriaRepository.findById(1L)).thenReturn(Optional.of(categoria));
+        when(sedeRepository.findById(1L)).thenReturn(Optional.of(sede));
+        when(userRepository.findById(2L)).thenReturn(Optional.of(juez));
+        when(torneoRepository.findAll()).thenReturn(new ArrayList<>());
+        
+        // ACT & ASSERT
+        RuntimeException exception = assertThrows(
+            RuntimeException.class,
+            () -> torneoService.createTorneo(request)
+        );
+        
+        assertTrue(exception.getMessage().contains("fecha de activación automática"));
+        verify(torneoRepository, never()).save(any(Torneo.class));
+    }
+    
+    @Test
+    public void testCrearTorneo_DebeRechazarFechaActivacionPasada() {
+        // ARRANGE
+        CreateTorneoRequest request = new CreateTorneoRequest();
+        request.setNombre("Torneo Prueba");
+        request.setCategoriaId(1L);
+        request.setSedeId(1L);
+        request.setJuezResponsableId(2L);
+        request.setActivacionAutomatica(true);
+        request.setFechaActivacionProgramada(LocalDateTime.now().minusDays(1)); // ❌ Fecha pasada
+        
+        Categoria categoria = new Categoria();
+        categoria.setId(1L);
+        categoria.setActiva(true);
+        
+        Sede sede = new Sede();
+        sede.setId(1L);
+        sede.setActiva(true);
+        
+        User juez = new User();
+        juez.setId(2L);
+        Role roleJudge = new Role();
+        roleJudge.setNombre("ROLE_JUDGE");
+        juez.setRoles(Set.of(roleJudge));
+        
+        when(categoriaRepository.findById(1L)).thenReturn(Optional.of(categoria));
+        when(sedeRepository.findById(1L)).thenReturn(Optional.of(sede));
+        when(userRepository.findById(2L)).thenReturn(Optional.of(juez));
+        when(torneoRepository.findAll()).thenReturn(new ArrayList<>());
+        
+        // ACT & ASSERT
+        RuntimeException exception = assertThrows(
+            RuntimeException.class,
+            () -> torneoService.createTorneo(request)
+        );
+        
+        assertTrue(exception.getMessage().contains("debe ser futura"));
         verify(torneoRepository, never()).save(any(Torneo.class));
     }
 }
