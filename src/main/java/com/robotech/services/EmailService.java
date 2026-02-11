@@ -1,175 +1,104 @@
 package com.robotech.services;
 
-import lombok.RequiredArgsConstructor;
+import com.resend.Resend;
+import com.resend.core.exception.ResendException;
+import com.resend.services.emails.model.CreateEmailOptions;
+import com.resend.services.emails.model.CreateEmailResponse;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.mail.javamail.JavaMailSender;
-import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 
-import jakarta.mail.MessagingException;
-import jakarta.mail.internet.MimeMessage;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 @Service
-@RequiredArgsConstructor
 public class EmailService {
 
-    private final JavaMailSender mailSender;
+    @Value("${resend.api.key}")
+    private String apiKey;
 
-    @Value("${spring.mail.username:noreply@robotech.com}")
+    @Value("${resend.from.email}")
     private String fromEmail;
 
     @Value("${app.frontend.url:http://localhost:5173}")
     private String frontendUrl;
 
     // ===========================
+    // MÉTODO PRIVADO CENTRAL
+    // ===========================
+    private void sendEmail(String to, String subject, String htmlContent) {
+        try {
+            Resend resend = new Resend(apiKey);
+
+            CreateEmailOptions params = CreateEmailOptions.builder()
+                    .from(fromEmail)
+                    .to(to)
+                    .subject(subject)
+                    .html(htmlContent)
+                    .build();
+
+            CreateEmailResponse response = resend.emails().send(params);
+            System.out.println("✅ Email enviado exitosamente a: " + to + " | ID: " + response.getId());
+
+        } catch (ResendException e) {
+            e.printStackTrace();
+            throw new RuntimeException("Error al enviar email via Resend: " + e.getMessage(), e);
+        }
+    }
+
+    // ===========================
     // ENVÍO DE CREDENCIALES
     // ===========================
     public void sendCredentialsEmail(String toEmail, String userName, String temporalPassword, List<String> roles) {
-        try {
-            System.out.println("📧 Intentando enviar email a: " + toEmail);
-            System.out.println("📧 Desde: " + fromEmail);
-
-            MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-
-            helper.setFrom(fromEmail);
-            helper.setTo(toEmail);
-            helper.setSubject("🔒 Bienvenido a RoboTech - Tus Credenciales de Acceso");
-
-            String htmlContent = buildCredentialsEmailTemplate(userName, toEmail, temporalPassword, roles);
-            helper.setText(htmlContent, true);
-
-            mailSender.send(message);
-            System.out.println("✅ Email enviado exitosamente a: " + toEmail);
-
-        } catch (MessagingException e) {
-            e.printStackTrace();
-            throw new RuntimeException("Error de mensajería al enviar email: " + e.getMessage(), e);
-        } catch (Exception e) {
-            e.printStackTrace();
-            throw new RuntimeException("Error al enviar email de credenciales: " + e.getMessage(), e);
-        }
+        System.out.println("📧 Intentando enviar email a: " + toEmail);
+        System.out.println("📧 Desde: " + fromEmail);
+        String htmlContent = buildCredentialsEmailTemplate(userName, toEmail, temporalPassword, roles);
+        sendEmail(toEmail, "🔑 Bienvenido a RoboTech - Tus Credenciales de Acceso", htmlContent);
+        System.out.println("✅ Email enviado exitosamente a: " + toEmail);
     }
 
     // ===========================
     // ENVÍO RECUPERACIÓN CONTRASEÑA
     // ===========================
     public void sendPasswordResetEmail(String toEmail, String token, String userName) {
-        try {
-            System.out.println("📧 Intentando enviar email de recuperación a: " + toEmail);
-
-            MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-
-            helper.setFrom(fromEmail);
-            helper.setTo(toEmail);
-            helper.setSubject("🔐 Recuperación de Contraseña - RoboTech");
-
-            String resetLink = frontendUrl + "/reset-password?token=" + token;
-
-            String htmlContent = buildPasswordResetEmailTemplate(userName, resetLink);
-            helper.setText(htmlContent, true);
-
-            mailSender.send(message);
-
-            System.out.println("✅ Email de recuperación enviado a: " + toEmail);
-
-        } catch (MessagingException e) {
-            e.printStackTrace();
-            throw new RuntimeException("Error de mensajería al enviar email: " + e.getMessage(), e);
-        } catch (Exception e) {
-            e.printStackTrace();
-            throw new RuntimeException("Error al enviar email de recuperación: " + e.getMessage(), e);
-        }
+        System.out.println("📧 Intentando enviar email de recuperación a: " + toEmail);
+        String resetLink = frontendUrl + "/reset-password?token=" + token;
+        String htmlContent = buildPasswordResetEmailTemplate(userName, resetLink);
+        sendEmail(toEmail, "🔐 Recuperación de Contraseña - RoboTech", htmlContent);
+        System.out.println("✅ Email de recuperación enviado a: " + toEmail);
     }
 
     // ===========================
-    // ✅ NUEVO: ENVÍO RESTABLECIMIENTO DE EMAIL
+    // ENVÍO RESTABLECIMIENTO DE EMAIL
     // ===========================
     public void sendEmailResetCredentials(String toEmail, String userName, String nuevoEmail,
             String nuevaPassword, String emailAnterior) {
-        try {
-            System.out.println("📧 Intentando enviar email de restablecimiento a: " + toEmail);
-
-            MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-
-            helper.setFrom(fromEmail);
-            helper.setTo(toEmail);
-            helper.setSubject("🔄 Restablecimiento de Email - RoboTech");
-
-            String htmlContent = buildEmailResetTemplate(userName, nuevoEmail, nuevaPassword, emailAnterior);
-            helper.setText(htmlContent, true);
-
-            mailSender.send(message);
-
-            System.out.println("✅ Email de restablecimiento enviado a: " + toEmail);
-
-        } catch (MessagingException e) {
-            e.printStackTrace();
-            throw new RuntimeException("Error de mensajería al enviar email: " + e.getMessage(), e);
-        } catch (Exception e) {
-            e.printStackTrace();
-            throw new RuntimeException("Error al enviar email de restablecimiento: " + e.getMessage(), e);
-        }
+        System.out.println("📧 Intentando enviar email de restablecimiento a: " + toEmail);
+        String htmlContent = buildEmailResetTemplate(userName, nuevoEmail, nuevaPassword, emailAnterior);
+        sendEmail(toEmail, "🔄 Restablecimiento de Email - RoboTech", htmlContent);
+        System.out.println("✅ Email de restablecimiento enviado a: " + toEmail);
     }
 
     // ===========================
-    // ✅ NUEVO: NOTIFICACIÓN DESHABILITACIÓN CLUB
+    // NOTIFICACIÓN DESHABILITACIÓN CLUB
     // ===========================
     public void sendClubDeshabilitacionNotification(String toEmail, String userName,
             String clubNombre, String motivo,
             LocalDateTime fechaLimite, Long deshabilitacionId) {
-        try {
-            System.out.println("📧 Enviando notificación de deshabilitación a: " + toEmail);
-
-            MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-
-            helper.setFrom(fromEmail);
-            helper.setTo(toEmail);
-            helper.setSubject("🚨 URGENTE: Tu club será deshabilitado - RoboTech");
-
-            String htmlContent = buildClubDeshabilitacionTemplate(
-                    userName, clubNombre, motivo, fechaLimite, deshabilitacionId);
-            helper.setText(htmlContent, true);
-
-            mailSender.send(message);
-            System.out.println("✅ Email de deshabilitación enviado a: " + toEmail);
-
-        } catch (Exception e) {
-            e.printStackTrace();
-            throw new RuntimeException("Error al enviar email de deshabilitación: " + e.getMessage(), e);
-        }
+        System.out.println("📧 Enviando notificación de deshabilitación a: " + toEmail);
+        String htmlContent = buildClubDeshabilitacionTemplate(userName, clubNombre, motivo, fechaLimite, deshabilitacionId);
+        sendEmail(toEmail, "🚨 URGENTE: Tu club será deshabilitado - RoboTech", htmlContent);
+        System.out.println("✅ Email de deshabilitación enviado a: " + toEmail);
     }
 
     // ===========================
-    // ✅ NUEVO: NOTIFICACIÓN DEGRADACIÓN
+    // NOTIFICACIÓN DEGRADACIÓN
     // ===========================
     public void sendDegradacionNotification(String toEmail, String userName, String clubNombre) {
-        try {
-            System.out.println("📧 Enviando notificación de degradación a: " + toEmail);
-
-            MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-
-            helper.setFrom(fromEmail);
-            helper.setTo(toEmail);
-            helper.setSubject("⚠️ Cambio en tu cuenta - RoboTech");
-
-            String htmlContent = buildDegradacionTemplate(userName, clubNombre);
-            helper.setText(htmlContent, true);
-
-            mailSender.send(message);
-            System.out.println("✅ Email de degradación enviado a: " + toEmail);
-
-        } catch (Exception e) {
-            e.printStackTrace();
-            throw new RuntimeException("Error al enviar email de degradación: " + e.getMessage(), e);
-        }
+        System.out.println("📧 Enviando notificación de degradación a: " + toEmail);
+        String htmlContent = buildDegradacionTemplate(userName, clubNombre);
+        sendEmail(toEmail, "⚠️ Cambio en tu cuenta - RoboTech", htmlContent);
+        System.out.println("✅ Email de degradación enviado a: " + toEmail);
     }
 
     // ===========================
@@ -227,7 +156,7 @@ public class EmailService {
                             </div>
 
                             <div class="credentials-box">
-                                <strong>🔒 Contraseña Temporal:</strong>
+                                <strong>🔑 Contraseña Temporal:</strong>
                                 <div class="value">{password}</div>
                             </div>
 
@@ -403,7 +332,7 @@ public class EmailService {
     }
 
     // ===========================
-    // ✅ NUEVO: TEMPLATE RESTABLECIMIENTO EMAIL
+    // TEMPLATE RESTABLECIMIENTO EMAIL
     // ===========================
     private String buildEmailResetTemplate(String userName, String nuevoEmail, String nuevaPassword,
             String emailAnterior) {
@@ -518,7 +447,7 @@ public class EmailService {
                             </div>
 
                             <div class="credentials-box">
-                                <strong>🔒 Nueva Contraseña Temporal:</strong>
+                                <strong>🔑 Nueva Contraseña Temporal:</strong>
                                 <div class="value">%s</div>
                             </div>
 
