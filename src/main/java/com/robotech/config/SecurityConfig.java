@@ -38,7 +38,7 @@ public class SecurityConfig {
                 "http://localhost:5173",
                 "http://localhost:5174",
                 "http://127.0.0.1:5501",
-                "https://clementejair.github.io",
+                "https://robotech-frontend2.onrender.com",
                 "https://prueba1-vsoz--3000--1db57326.local-credentialless.webcontainer.io"));
         config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
         config.setAllowedHeaders(List.of("*"));

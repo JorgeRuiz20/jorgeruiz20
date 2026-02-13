@@ -171,6 +171,10 @@ private ClubDTO convertToClubDTO(Club club) {
         private String pais;
         private String logo;
         private Long ownerId; // ID del usuario que será el owner
+        public void setMaxParticipantes(int i) {
+            // TODO Auto-generated method stub
+            throw new UnsupportedOperationException("Unimplemented method 'setMaxParticipantes'");
+        }
     }
 
     @Data
