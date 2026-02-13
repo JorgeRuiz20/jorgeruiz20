@@ -57,6 +57,7 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth
                         // Health check público
+                        .requestMatchers("/health").permitAll()
                         .requestMatchers("/api/health/**").permitAll()
 
                         // Swagger público
