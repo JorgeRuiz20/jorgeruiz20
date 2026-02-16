@@ -7,28 +7,34 @@ import java.text.Normalizer;
 import java.util.regex.Pattern;
 
 /**
- * ✅ Servicio mejorado con umbrales dinámicos por contexto
+ * ✅ SOLUCIÓN MEJORADA - Validación inteligente de duplicados
  * 
- * UMBRALES DE SIMILITUD:
- * - Emails: 0.75 (75%) - Muy permisivo
- * - Nombres/Apellidos: 0.70 (70%) - Permisivo
- * - Robots: 0.80 (80%) - Moderado
- * - Torneos: 0.82 (82%) - Moderado-Estricto
- * - Categorías: 0.85 (85%) - Estricto
- * - Sedes: 0.85 (85%) - Estricto
- * - Clubs: 0.83 (83%) - Moderado-Estricto
+ * PROBLEMAS RESUELTOS:
+ * 1. Emails: Ahora compara solo el "local-part" (antes del @)
+ * 2. Nombres: Umbral ajustado para evitar falsos positivos
+ * 
+ * UMBRALES OPTIMIZADOS:
+ * - Email local-part: 0.85 (solo compara lo que está antes del @)
+ * - Nombres completos: 0.80 (más estricto para evitar "Javier" vs "Jair")
+ * - Nombres individuales: 0.75
+ * - Robots: 0.80
+ * - Torneos: 0.82
+ * - Categorías: 0.85
+ * - Sedes: 0.85
+ * - Clubs: 0.83
  */
 @Service
 public class SimilarityService {
 
-    // Umbrales por contexto
-    public static final double THRESHOLD_EMAIL = 0.75;      // Emails
-    public static final double THRESHOLD_NOMBRE = 0.70;     // Nombres/Apellidos
-    public static final double THRESHOLD_ROBOT = 0.80;      // Robots
-    public static final double THRESHOLD_TORNEO = 0.82;     // Torneos
-    public static final double THRESHOLD_CATEGORIA = 0.85;  // Categorías
-    public static final double THRESHOLD_SEDE = 0.85;       // Sedes
-    public static final double THRESHOLD_CLUB = 0.83;       // Clubs
+    // ✅ UMBRALES OPTIMIZADOS
+    public static final double THRESHOLD_EMAIL_LOCAL = 0.85;    // Solo local-part del email
+    public static final double THRESHOLD_NOMBRE_COMPLETO = 0.80; // Nombre + Apellido
+    public static final double THRESHOLD_NOMBRE = 0.75;          // Nombre o Apellido solo
+    public static final double THRESHOLD_ROBOT = 0.80;
+    public static final double THRESHOLD_TORNEO = 0.82;
+    public static final double THRESHOLD_CATEGORIA = 0.85;
+    public static final double THRESHOLD_SEDE = 0.85;
+    public static final double THRESHOLD_CLUB = 0.83;
 
     private final JaroWinklerSimilarity jaroWinkler;
     private static final Pattern EMAIL_PATTERN = Pattern.compile(
@@ -70,6 +76,125 @@ public class SimilarityService {
     }
 
     /**
+     * ✅ NUEVA FUNCIONALIDAD: Extrae la parte local del email (antes del @)
+     */
+    private String extraerLocalPart(String email) {
+        if (email == null || !email.contains("@")) {
+            return email;
+        }
+        return email.substring(0, email.indexOf("@"));
+    }
+
+    /**
+     * ✅ NUEVA FUNCIONALIDAD: Extrae el dominio del email (después del @)
+     */
+    private String extraerDominio(String email) {
+        if (email == null || !email.contains("@")) {
+            return "";
+        }
+        return email.substring(email.indexOf("@"));
+    }
+
+    /**
+     * ✅ MEJORADO: Validación inteligente de emails
+     * Compara:
+     * 1. Dominio EXACTO (debe ser igual)
+     * 2. Local-part con umbral alto (85%)
+     */
+    public boolean existeEmailSimilar(String emailNuevo, Iterable<String> emailsExistentes) {
+        if (emailNuevo == null || !emailNuevo.contains("@")) {
+            return false;
+        }
+
+        String localPartNuevo = extraerLocalPart(emailNuevo);
+        String dominioNuevo = extraerDominio(emailNuevo);
+
+        for (String emailExistente : emailsExistentes) {
+            if (emailExistente == null || !emailExistente.contains("@")) {
+                continue;
+            }
+
+            String localPartExistente = extraerLocalPart(emailExistente);
+            String dominioExistente = extraerDominio(emailExistente);
+
+            // ✅ REGLA 1: Los dominios deben ser EXACTAMENTE iguales
+            if (!normalizar(dominioNuevo).equals(normalizar(dominioExistente))) {
+                continue;
+            }
+
+            // ✅ REGLA 2: Si los dominios son iguales, compara local-parts
+            double similitud = calcularSimilitud(localPartNuevo, localPartExistente);
+            if (similitud >= THRESHOLD_EMAIL_LOCAL) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * ✅ MEJORADO: Encuentra email similar considerando dominio
+     */
+    public String encontrarEmailSimilar(String emailNuevo, Iterable<String> emailsExistentes) {
+        if (emailNuevo == null || !emailNuevo.contains("@")) {
+            return null;
+        }
+
+        String localPartNuevo = extraerLocalPart(emailNuevo);
+        String dominioNuevo = extraerDominio(emailNuevo);
+        
+        double maxSimilitud = 0.0;
+        String emailMasSimilar = null;
+
+        for (String emailExistente : emailsExistentes) {
+            if (emailExistente == null || !emailExistente.contains("@")) {
+                continue;
+            }
+
+            String localPartExistente = extraerLocalPart(emailExistente);
+            String dominioExistente = extraerDominio(emailExistente);
+
+            // Solo compara si tienen el mismo dominio
+            if (!normalizar(dominioNuevo).equals(normalizar(dominioExistente))) {
+                continue;
+            }
+
+            double similitud = calcularSimilitud(localPartNuevo, localPartExistente);
+            if (similitud > maxSimilitud && similitud >= THRESHOLD_EMAIL_LOCAL) {
+                maxSimilitud = similitud;
+                emailMasSimilar = emailExistente;
+            }
+        }
+
+        return emailMasSimilar;
+    }
+
+    /**
+     * ✅ MEJORADO: Validación más estricta para nombres completos
+     * Umbral: 0.80 (antes era 0.70)
+     */
+    public boolean existeNombreCompletoSimilar(String nombreCompleto, Iterable<String> nombresCompletos) {
+        return existeSimilarEn(nombreCompleto, nombresCompletos, THRESHOLD_NOMBRE_COMPLETO);
+    }
+
+    public String encontrarNombreCompletoSimilar(String nombreCompleto, Iterable<String> nombresCompletos) {
+        return encontrarSimilarMasCercano(nombreCompleto, nombresCompletos, THRESHOLD_NOMBRE_COMPLETO);
+    }
+
+    /**
+     * Para NOMBRES/APELLIDOS individuales - Moderado (75%)
+     */
+    public boolean existeNombreSimilar(String nombreNuevo, Iterable<String> nombresExistentes) {
+        return existeSimilarEn(nombreNuevo, nombresExistentes, THRESHOLD_NOMBRE);
+    }
+
+    public String encontrarNombreSimilar(String nombreNuevo, Iterable<String> nombresExistentes) {
+        return encontrarSimilarMasCercano(nombreNuevo, nombresExistentes, THRESHOLD_NOMBRE);
+    }
+
+    // ============ MÉTODOS GENÉRICOS (SIN CAMBIOS) ============
+
+    /**
      * Verifica similitud con umbral personalizado
      */
     public boolean sonSimilares(String texto1, String texto2, double threshold) {
@@ -106,29 +231,7 @@ public class SimilarityService {
         return masSimilar;
     }
 
-    // ============ MÉTODOS DE CONTEXTO ESPECÍFICO ============
-
-    /**
-     * Para EMAILS - Muy permisivo (75%)
-     */
-    public boolean existeEmailSimilar(String emailNuevo, Iterable<String> emailsExistentes) {
-        return existeSimilarEn(emailNuevo, emailsExistentes, THRESHOLD_EMAIL);
-    }
-
-    public String encontrarEmailSimilar(String emailNuevo, Iterable<String> emailsExistentes) {
-        return encontrarSimilarMasCercano(emailNuevo, emailsExistentes, THRESHOLD_EMAIL);
-    }
-
-    /**
-     * Para NOMBRES/APELLIDOS - Permisivo (70%)
-     */
-    public boolean existeNombreSimilar(String nombreNuevo, Iterable<String> nombresExistentes) {
-        return existeSimilarEn(nombreNuevo, nombresExistentes, THRESHOLD_NOMBRE);
-    }
-
-    public String encontrarNombreSimilar(String nombreNuevo, Iterable<String> nombresExistentes) {
-        return encontrarSimilarMasCercano(nombreNuevo, nombresExistentes, THRESHOLD_NOMBRE);
-    }
+    // ============ MÉTODOS DE CONTEXTO ESPECÍFICO (RESTO SIN CAMBIOS) ============
 
     /**
      * Para ROBOTS - Moderado (80%)
@@ -183,17 +286,6 @@ public class SimilarityService {
 
     public String encontrarClubSimilar(String nombreClub, Iterable<String> clubsExistentes) {
         return encontrarSimilarMasCercano(nombreClub, clubsExistentes, THRESHOLD_CLUB);
-    }
-
-    /**
-     * Validación de nombres y apellidos completos
-     */
-    public boolean existeNombreCompletoSimilar(String nombreCompleto, Iterable<String> nombresCompletos) {
-        return existeSimilarEn(nombreCompleto, nombresCompletos, THRESHOLD_NOMBRE);
-    }
-
-    public String encontrarNombreCompletoSimilar(String nombreCompleto, Iterable<String> nombresCompletos) {
-        return encontrarSimilarMasCercano(nombreCompleto, nombresCompletos, THRESHOLD_NOMBRE);
     }
 
     // ============ VALIDACIONES DE FORMATO ============
